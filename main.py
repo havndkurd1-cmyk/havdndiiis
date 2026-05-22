@@ -9,22 +9,19 @@ import yt_dlp as youtube_dlp
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("GROK_OMEGA")
 
-ADMIN_IDS = [1017196501635711048]  # YOUR ID
-
 # ================== YT-DLP WITH COOKIES ==================
 ytdl_format_options = {
-    'format': 'bestaudio/best',
+    'format': 'bestaudio/best[acodec=opus]/bestaudio/best',
     'noplaylist': True,
     'quiet': True,
     'no_warnings': True,
     'default_search': 'ytsearch',
+    'cookiefile': 'cookies.txt',                    # Using the file in repo
     'extractor_args': {
         'youtube': {
-            'player_client': ['ios', 'android', 'web', 'web_embedded', 'tv'],
-            'po_token': None,           # can be added later
+            'player_client': ['ios', 'android', 'web', 'tv', 'web_embedded']
         }
     },
-    'cookiefile': 'cookies.txt',        # ← THIS IS THE KEY
     'http_headers': {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
     }
@@ -72,11 +69,12 @@ async def play_next(guild_id: int):
     except Exception as e:
         logger.error(f"Play error: {e}")
 
-@tree.command(name="play", description="Play song from YouTube")
+@tree.command(name="play", description="Play song from YouTube (search or URL)")
 async def play(interaction: discord.Interaction, query: str):
     await interaction.response.defer()
+    
     if not interaction.user.voice:
-        return await interaction.followup.send("Join a voice channel first!")
+        return await interaction.followup.send("❌ You must be in a voice channel!")
 
     vc = interaction.guild.voice_client
     if not vc:
@@ -98,14 +96,15 @@ async def play(interaction: discord.Interaction, query: str):
         else:
             await interaction.followup.send(f"📝 **Queued:** {song['title']}")
     except Exception as e:
-        await interaction.followup.send(f"❌ Error: {str(e)[:300]}")
+        logger.error(f"Error: {e}")
+        await interaction.followup.send(f"❌ Failed to play: {str(e)[:250]}")
 
-@tree.command(name="leave", description="Leave voice")
+@tree.command(name="leave", description="Leave voice channel")
 async def leave(interaction: discord.Interaction):
     if interaction.guild.voice_client:
         await interaction.guild.voice_client.disconnect()
         queues[interaction.guild.id].clear()
-        await interaction.response.send_message("✅ Left voice.")
+        await interaction.response.send_message("✅ Left voice channel.")
     else:
         await interaction.response.send_message("Not in voice.")
 
