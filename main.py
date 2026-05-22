@@ -7,16 +7,27 @@ from collections import defaultdict, deque
 import yt_dlp as youtube_dlp
 
 logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger("GROK")
+logger = logging.getLogger("GROK_OMEGA")
 
-ADMIN_IDS = [1017196501635711048]  # ← YOUR ID
+ADMIN_IDS = [1017196501635711048]  # YOUR ID
 
+# ================== YT-DLP WITH COOKIES ==================
 ytdl_format_options = {
     'format': 'bestaudio/best',
     'noplaylist': True,
     'quiet': True,
     'no_warnings': True,
     'default_search': 'ytsearch',
+    'extractor_args': {
+        'youtube': {
+            'player_client': ['ios', 'android', 'web', 'web_embedded', 'tv'],
+            'po_token': None,           # can be added later
+        }
+    },
+    'cookiefile': 'cookies.txt',        # ← THIS IS THE KEY
+    'http_headers': {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+    }
 }
 
 ffmpeg_options = {
@@ -27,7 +38,7 @@ ffmpeg_options = {
 ytdl = youtube_dlp.YoutubeDL(ytdl_format_options)
 
 class YTDLSource(discord.PCMVolumeTransformer):
-    def __init__(self, source, *, data, volume=1.0):   # MAX VOLUME
+    def __init__(self, source, *, data, volume=1.0):
         super().__init__(source, volume)
         self.title = data.get('title', 'Unknown')
 
@@ -41,13 +52,14 @@ class YTDLSource(discord.PCMVolumeTransformer):
 
         return cls(discord.FFmpegPCMAudio(data['url'], **ffmpeg_options), data=data, volume=1.0)
 
+# ================== BOT SETUP ==================
 intents = discord.Intents.all()
 bot = discord.Client(intents=intents)
 tree = app_commands.CommandTree(bot)
 
 queues = defaultdict(lambda: deque())
 
-async def play_next(guild_id):
+async def play_next(guild_id: int):
     vc = discord.utils.get(bot.voice_clients, guild__id=guild_id)
     if not vc or not queues[guild_id]:
         return
@@ -56,11 +68,11 @@ async def play_next(guild_id):
     try:
         player = await YTDLSource.from_url(song['url'], loop=bot.loop)
         vc.play(player, after=lambda e: asyncio.run_coroutine_threadsafe(play_next(guild_id), bot.loop))
-        logger.info(f"NOW PLAYING → {song['title']}")
+        logger.info(f"NOW PLAYING: {song['title']}")
     except Exception as e:
-        logger.error(f"PLAY ERROR: {e}")
+        logger.error(f"Play error: {e}")
 
-@tree.command(name="play", description="Play song")
+@tree.command(name="play", description="Play song from YouTube")
 async def play(interaction: discord.Interaction, query: str):
     await interaction.response.defer()
     if not interaction.user.voice:
@@ -73,6 +85,7 @@ async def play(interaction: discord.Interaction, query: str):
     try:
         loop = asyncio.get_event_loop()
         data = await loop.run_in_executor(None, lambda: ytdl.extract_info(query, download=False, process=False))
+        
         if 'entries' in data:
             data = data['entries'][0]
 
@@ -83,23 +96,23 @@ async def play(interaction: discord.Interaction, query: str):
             await play_next(interaction.guild.id)
             await interaction.followup.send(f"▶️ **Now Playing:** {song['title']}")
         else:
-            await interaction.followup.send(f"📝 Queued: {song['title']}")
+            await interaction.followup.send(f"📝 **Queued:** {song['title']}")
     except Exception as e:
-        await interaction.followup.send(f"❌ Error: {str(e)[:200]}")
+        await interaction.followup.send(f"❌ Error: {str(e)[:300]}")
 
 @tree.command(name="leave", description="Leave voice")
 async def leave(interaction: discord.Interaction):
     if interaction.guild.voice_client:
         await interaction.guild.voice_client.disconnect()
         queues[interaction.guild.id].clear()
-        await interaction.response.send_message("✅ Left voice channel.")
+        await interaction.response.send_message("✅ Left voice.")
     else:
         await interaction.response.send_message("Not in voice.")
 
 @bot.event
 async def on_ready():
     await tree.sync()
-    print(f"✅ {bot.user} | Protocol Zero Active")
+    print(f"✅ {bot.user} | Protocol Zero Active | Cookies Loaded")
 
 async def main():
     async with bot:
