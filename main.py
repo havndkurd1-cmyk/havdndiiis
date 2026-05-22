@@ -50,7 +50,7 @@ tree = app_commands.CommandTree(bot)
 queues = defaultdict(lambda: deque())
 
 async def play_next(guild_id):
-    vc = discord.utils.get(bot.voice_clients, guild__id=guild_id)
+    vc = discord.utils.get(bot.voice_clients, guild_id=guild_id)
     if not vc or not queues[guild_id]:
         return
 
@@ -82,7 +82,7 @@ async def play(interaction: discord.Interaction, query: str):
         queues[interaction.guild.id].append(song)
 
         if not vc.is_playing():
-            await play_next(interaction.guild.id)
+            await play_next(interaction.guild_id)
             await interaction.followup.send(f"▶️ **Now Playing:** {song['title']}")
         else:
             await interaction.followup.send(f"📝 Queued: {song['title']}")
