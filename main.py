@@ -7,12 +7,10 @@ from collections import defaultdict, deque
 import yt_dlp as youtube_dlp
 
 logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger("GROK_OMEGA")
+logger = logging.getLogger("GROK")
 
-# ================== ADMIN ==================
-ADMIN_IDS = [1017196501635711048]  # ← YOUR ID HERE
+ADMIN_IDS = [1017196501635711048]  # ← YOUR DISCORD ID
 
-# ================== STRONGER YT-DLP + FFMPEG ==================
 ytdl_format_options = {
     'format': 'bestaudio/best',
     'noplaylist': True,
@@ -24,15 +22,15 @@ ytdl_format_options = {
 
 ffmpeg_options = {
     'before_options': '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5',
-    'options': '-vn -acodec pcm_s16le -ar 48000 -ac 2'   # Forced correct format for Discord
+    'options': '-vn -acodec pcm_s16le -ar 48000 -ac 2'
 }
 
 ytdl = youtube_dlp.YoutubeDL(ytdl_format_options)
 
 class YTDLSource(discord.PCMVolumeTransformer):
-    def __init__(self, source, *, data, volume=0.85):
+    def __init__(self, source, *, data, volume=0.9):
         super().__init__(source, volume)
-        self.title = data.get('title', 'Unknown Title')
+        self.title = data.get('title', 'Unknown')
 
     @classmethod
     async def from_url(cls, url, *, loop=None, stream=True):
@@ -42,42 +40,37 @@ class YTDLSource(discord.PCMVolumeTransformer):
         if 'entries' in data:
             data = data['entries'][0]
 
-        filename = data['url'] if stream else ytdl.prepare_filename(data)
-        return cls(discord.FFmpegPCMAudio(filename, **ffmpeg_options), data=data)
+        return cls(discord.FFmpegPCMAudio(data['url'], **ffmpeg_options), data=data)
 
 # ================== BOT ==================
 intents = discord.Intents.all()
 bot = discord.Client(intents=intents)
 tree = app_commands.CommandTree(bot)
 
-music_queues = defaultdict(lambda: deque())
-now_playing = defaultdict(lambda: None)
+queues = defaultdict(lambda: deque())
+now_playing = {}
 
-async def play_next(guild_id: int):
+async def play_next(guild_id):
     vc = discord.utils.get(bot.voice_clients, guild__id=guild_id)
-    if not vc or not music_queues[guild_id]:
+    if not vc or not queues[guild_id]:
         return
 
-    song = music_queues[guild_id].popleft()
+    song = queues[guild_id].popleft()
     now_playing[guild_id] = song
 
     try:
         player = await YTDLSource.from_url(song['url'], loop=bot.loop)
         vc.play(player, after=lambda e: asyncio.run_coroutine_threadsafe(play_next(guild_id), bot.loop))
-        logger.info(f"✅ Playing: {song['title']}")
+        logger.info(f"Playing: {song['title']}")
     except Exception as e:
-        logger.error(f"Play error: {e}")
-        await asyncio.sleep(2)
+        logger.error(f"Error: {e}")
         await play_next(guild_id)
 
-# ================== COMMANDS ==================
-@tree.command(name="play", description="Play song from YouTube")
+@tree.command(name="play", description="Play song")
 async def play(interaction: discord.Interaction, query: str):
     await interaction.response.defer()
-
     if not interaction.user.voice:
-        await interaction.followup.send("❌ Join a voice channel first!")
-        return
+        return await interaction.followup.send("Join a voice channel!")
 
     vc = interaction.guild.voice_client
     if not vc:
@@ -86,12 +79,11 @@ async def play(interaction: discord.Interaction, query: str):
     try:
         loop = asyncio.get_event_loop()
         data = await loop.run_in_executor(None, lambda: ytdl.extract_info(query, download=False, process=False))
-
         if 'entries' in data:
             data = data['entries'][0]
 
         song = {'title': data.get('title', query), 'url': data.get('webpage_url') or query}
-        music_queues[interaction.guild.id].append(song)
+        queues[interaction.guild.id].append(song)
 
         if not vc.is_playing():
             await play_next(interaction.guild.id)
@@ -99,31 +91,21 @@ async def play(interaction: discord.Interaction, query: str):
         else:
             await interaction.followup.send(f"📝 Queued: {song['title']}")
     except Exception as e:
-        await interaction.followup.send(f"❌ Error: {str(e)[:250]}")
-
-@tree.command(name="join", description="Join voice")
-async def join(interaction: discord.Interaction):
-    if not interaction.user.voice:
-        await interaction.response.send_message("Join VC first!", ephemeral=True)
-        return
-    await interaction.user.voice.channel.connect()
-    await interaction.response.send_message("✅ Joined and ready.")
+        await interaction.followup.send(f"❌ Error: {str(e)[:200]}")
 
 @tree.command(name="leave", description="Leave voice")
 async def leave(interaction: discord.Interaction):
     if interaction.guild.voice_client:
         await interaction.guild.voice_client.disconnect()
-        music_queues[interaction.guild.id].clear()
-        await interaction.response.send_message("✅ Left voice channel.")
+        queues[interaction.guild.id].clear()
+        await interaction.response.send_message("✅ Left voice.")
     else:
         await interaction.response.send_message("Not in voice.")
-
-# Skip, Queue, Pause, Resume, Stop commands (add them if you want)
 
 @bot.event
 async def on_ready():
     await tree.sync()
-    print(f"✅ {bot.user} | Protocol Zero Active")
+    print(f"✅ {bot.user} is online - Protocol Zero")
 
 async def main():
     async with bot:
