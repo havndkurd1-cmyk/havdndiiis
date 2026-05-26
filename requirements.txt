@@ -8,3 +8,5 @@ webdriver-manager
 requests
 undetected-chromedriver
 asyncio
+discord.py[voice_recv]
+PyNaCl
